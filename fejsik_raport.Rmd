@@ -1,0 +1,151 @@
+---
+title: "Opowieść o lajkach na fejsie"
+output:
+  html_document:
+    df_print: paged
+---
+
+<style>
+
+body {
+  font-family: Tahoma;
+  font-size: 140%;
+}
+
+</style>
+
+
+
+<h2> Wstęp </h2>
+
+Co łączy wPolityce i Gazeta.pl? Poza tym, że oba są portalami informacyjnymi, to pewnie niewiele. A taka Rzeczpospolita, dokąd jej bliżej? Do Wyborczej czy Frondy? A, powiedzmy, który z tych portali ma najWięcej użytkowników przekonanych o zgubnej roli szczepionek? Czytelnicy których portali informacyjnych słuchają disco polo i w wolnych chwilach czytają Pudelka? 
+
+Skorzystamy dzisiaj z fejsbukowego API i pobawimy się profilami FB polskich portali informacyjnych. Będziemy używać, oczywiście, najwspanialszego z języków, czyli R.
+
+Wychodzimy z założenia, że miarodajnym sposobem pomiaru dystansu pomiędzy profilami A i B jest ilość użytkowników aktywnie korzystających z obu portali. Jeżeli portale A i B są odpowiednio duże, to prawdopobieństwo tego, że losowy sympatyk profilu A lajkuje również treści na portalu B, może być interpretowane jako podobieństwo tych portali. Tutaj od razu koniecznych jest kilka uwag:
+
+<ul>
+<li> Samo zalajkowanie portalu nie jest zbyt wartościową informacją. Ludzie mogą zalajkować jakiś portal pod wpływem impulsu (np. śmieszne wideo z kotkami), a potem odfiltrować treści z tegoż portalu i praktycznie z niego nie korzystać. A lajk wciąż istnieje. Dlatego interesuje nas bardziej aktywność użytkowników, aniżeli szerokie grono osób które kiedyś zalajkowało portal. </li>
+<li> Mówimy o <b> lajkowaniu </b> treści, a nie komentowaniu. Ktoś może komentować treści na dwóch portalach o zupełnie różnych sympatiach politycznych: na jednym komentarze są pełne glorii i zachwytu nad trafnością diagnozy, a na drugich jest czysty hejt. </li>
+<li> Portale różnią się profilem socjodemograficznym (tak wiem, odkrywcze), a to może mieć wpływ na to jak korzystają z Facebooka. Innymi słowy, skłonność do lajkowania postów na FB nie jest niezależna od tego, jakie profile ktoś lubi. </li>
+</ul>
+
+
+Tak więc, na potrzeby naszej zabawy, zdefiniujemy podobieństwo między profilami A i B jako % osób, które zalajkowało przynajmniej jeden post na obu portalach. Jeżeli $likes(X, n)$ zwraca listę osób, które zalajkowały jeden z $n$ ostatnich postów na profilu $X$, to podobieństwo $s$ między $A$ i $B$ definiujemy jako
+
+$$ s = \frac{likes(A, n) \cap likes(B, n)}{likes(A, n) \cup likes(B, n)}. $$
+
+Na potrzeby naszej zabawy przyjmiemy $n = 100$. Dlaczego 100? Nie mam w sumie uzasadnienia, jezeli ktoś chce to może pożyczyć kod i zmienić tę definicję wedle uznania. 
+
+<h2> Analizowane portale </h2>
+
+Wybór portali jest dość arbitralny, nie kierowałem się żadnym obiektywnym kryterium. Starałem się uwzględnić portale z lewej jak i z prawej. Ich lista, wraz z ich "rozmiarem" czy też zasięgiem (tzn. ilością unikalnych użytkowników którzy zalajkowali przynajmniej 1 post z ostatnich 100 opublikowanych przez portal) - na wykresie poniżej:
+
+```{r, warning = FALSE, message = FALSE, echo=FALSE}
+library(memoise)
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+library(purrr)
+
+library(Rfacebook)
+
+load("d:/kaggle/fb_oauth")
+setwd("d:/kaggle/fejsik/")
+
+df = read.csv("df.csv", stringsAsFactors = FALSE, header = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+
+group_by(df, fb) %>%
+  summarise(users = n_distinct(userid)) %>%
+  arrange(desc(users)) %>%
+  ggplot(aes(x = reorder(fb, users),
+             y = users / 1000)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(y = 0.5 + users/1000,
+                label = round(users/1000,1)  ), 
+            size = 3) +
+  coord_flip() +
+  labs(y = "Aktywni uzytkownicy (tys.)",
+       x = "Portal") +
+  theme_minimal()
+
+```
+
+
+<h2> Dane </h2>
+
+Do ściągnięcia danych posłuży nam <i> Rfacebook </i>. Najpierw potrzebujemy funkcji, która dla danego portalu zwróci listę unikalnych użytkowników, którzy w ostatnim czasie coś na tej stronie zalajkowali. Więc:
+
+```{r, warning=FALSE, message=FALSE, eval=FALSE}
+return_likes = function(page_name, n_posts) {
+  print(page_name)
+  pg <- getPage(page_name, n = n_posts, token = fb_oauth)
+  dfc = data_frame(post = NA,
+                   userid = NA)
+  pg = filter(pg, likes_count > 0)
+  for(p in pg$id) {
+    fb_post = getPost(post = p, fb_oauth, n = 2000, likes = TRUE, comments = FALSE)
+    id_comments = unique(fb_post$likes$from_id)
+    dfc = rbind(dfc,
+                data_frame(post = rep(p, length(id_comments)), 
+                           userid = id_comments) )
+    #print(length(id_comments))
+  }
+  dfc[, "fb"] = page_name
+  return(dfc)
+}
+```
+
+Teraz tylko musimy wywołać powyższe dla interesujących nas portali. Zamiast pisać pętlę for po portalach, skorzystamy z pakietu <i> purrr </i>. Podstawową funkcją Purrr jest <i> map(x, f), </i> która aplikuje funkcję <i> f </i> do wszystkich elementów wektora <i> x </i>. 
+
+Pomożemy sobie również pakietem <i> memoise </i>. Jako że poszczególne wywołania funkcji <i> return_likes </i> mogą chwilę zająć, a Rfacebook bywa zawodny (przynajmniej u mnie), to dokonamy memoizacji tej funkcji. Oznacza to tyle, że dla argumentów, dla których funkcja została wywołana wcześniej, wyniki będą zapamiętane i kod nie będzie wywoływany ponownie. Samo użycie <i> memoise </i> w R jest trywialne, a pozwala niekiedy oszczędzić czas i nerwy.
+
+```{r, warning = FALSE, message=FALSE, eval =FALSE}
+fb_names = c("Onet", "WirtualnaPolska", "wPolityce", "gazetapl", "dziennikrzeczpospolita", "wwwsepl",
+             "TygodnikDoRzeczy", "KrytykaPolityczna", "PolskaAgencjaPrasowa", "nczas",
+             "tvn24pl", "tvp.info", "radiozet", "rmf24", "natematpl", "TygodnikPolityka",
+             "NewsweekPolska", "tygodnikwprost", "gazetaprawnapl", "forsalpl", "Bankierpl",
+             "goscniedzielny", "RadioMaryja", "frondaPL", "NiezaleznaPL")
+
+m_return_likes = memoise(return_likes)
+z = map(fb_names, function(df) m_return_likes(df, 100))
+
+df = do.call("rbind", z)
+df = filter(df, !is.na(userid))
+
+```
+
+Ot i cała filozofia. Teraz możemy zajrzeć do środka.
+
+<h2> Analiza </h2>
+
+<h3> Podobieństwa między portalami </h3>
+
+<h3> Partie polityczne </h3>
+
+Pociągnijmy opowieść dalej. Możemy zastosować dokładnie tę samą metodologię mierząc podobieństwo między portalem informacyjnym a partią polityczną. I tak też zrobimy. 
+
+Ściągamy zatem 100 ostatnich postów z oficjalnych profilów następujących partii: PiS, Platforma Obywatelska, Kukiz'15, Nowoczesna oraz SLD.
+
+```{r, warning=FALSE, message=FALSE, eval=FALSE}
+test_sites = c("pisorgpl", "Nowoczesna.oficjalnie", "PlatformaObywatelska",
+               "sojusz", "KlubPoselskiKukiz15")
+
+
+#sciagamy dane i dołączamy do istniejącego zbioru...
+ts = map(test_sites, function(df) m_return_likes(df, 100))
+
+dts = do.call("rbind", ts)
+dts = filter(dts, !is.na(userid))
+dts = rbind(dts, df)
+```
+
+
+
+```{r, echo = FALSE}
+dm = read.csv("dm.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+
