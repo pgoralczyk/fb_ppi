@@ -103,11 +103,20 @@ Teraz tylko musimy wywołać powyższe dla interesujących nas portali. Zamiast 
 
 Pomożemy sobie również pakietem <i> memoise </i>. Jako że poszczególne wywołania funkcji <i> return_likes </i> mogą chwilę zająć, a Rfacebook bywa zawodny (przynajmniej u mnie), to dokonamy memoizacji tej funkcji. Oznacza to tyle, że dla argumentów, dla których funkcja została wywołana wcześniej, wyniki będą zapamiętane i kod nie będzie wywoływany ponownie. Samo użycie <i> memoise </i> w R jest trywialne, a pozwala niekiedy oszczędzić czas i nerwy.
 
-```{r, warning = FALSE, message=FALSE, eval =FALSE}
-fb_names = c("Onet", "WirtualnaPolska", "wPolityce", "gazetapl", "dziennikrzeczpospolita", "wwwsepl",
+```{r, echo  =FALSE }
+fb_names = c("Onet", "WirtualnaPolska", "wPolityce", "gazetapl", "dziennikrzeczpospolita", "interia",
              "TygodnikDoRzeczy", "KrytykaPolityczna", "PolskaAgencjaPrasowa", "nczas",
              "tvn24pl", "tvp.info", "radiozet", "rmf24", "natematpl", "TygodnikPolityka",
-             "NewsweekPolska", "tygodnikwprost", "gazetaprawnapl", "forsalpl", "Bankierpl",
+             "NewsweekPolska", "tygodnikwprost", "gazetaprawnapl", "Bankierpl",
+             "goscniedzielny", "RadioMaryja", "frondaPL", "NiezaleznaPL")
+```
+
+
+```{r, warning = FALSE, message=FALSE, eval =FALSE}
+fb_names = c("Onet", "WirtualnaPolska", "wPolityce", "gazetapl", "dziennikrzeczpospolita", "interia",
+             "TygodnikDoRzeczy", "KrytykaPolityczna", "PolskaAgencjaPrasowa", "nczas",
+             "tvn24pl", "tvp.info", "radiozet", "rmf24", "natematpl", "TygodnikPolityka",
+             "NewsweekPolska", "tygodnikwprost", "gazetaprawnapl", "Bankierpl",
              "goscniedzielny", "RadioMaryja", "frondaPL", "NiezaleznaPL")
 
 m_return_likes = memoise(return_likes)
@@ -124,11 +133,48 @@ Ot i cała filozofia. Teraz możemy zajrzeć do środka.
 
 <h3> Podobieństwa między portalami </h3>
 
+Nie będę nudził drukując długie tabele pełne suchych liczb. Jeżeli ktoś zainteresowany, pliki są na githubie (link poniżej). 
+
+Ok. Na początek chcemy się rozeznać w sytuacji. Generalnie rzecz biorąc, na nieco ponad 150 tysięcy unikalnych użytkowników Facebooka, których aktywność analizujemy, 83.6% z nich zostawiło lajka na dokładnie jednym portalu. Intensywna aktywność na kilku profilach nie jest zatem czymś bardzo powszechnym. W związku z tym, zdefiniowane powyżej podobieństwo między portalami rzadko przekracza 5%. Jednak nie da się ukryć, że po głębszym przyjrzeniu się liczbom, znaleźć można grupy portali ściśle ze sobą związane - i grupy te nie będą chyba dla nikogo zaskoczeniem.
+
+Pozostaje pytanie: jak to zwizualizować. Zdecydujemy się tutaj na stare, dobre i sprawdzone skalowanie międzywymiarowe (MDS). Przypomnę: punktem wyjścia jest wielowymiarowa macierz opisująca podobieństwa pomiędzy analizowanymi portalami. My chcemy tę macierz narysować w dwóch wymiarach, zachowując jednak - na tyle, na ile to możliwe - strukturę odległości pomiędzy nimi. Dostajemy coś takiego:
+
+```{r, warning=FALSE, message=FALSE, fig.align="center", fig.width=8, fig.height=6}
+fb_d = read.csv("d:/kaggle/fejsik/fb_d.csv", header = TRUE, stringsAsFactors = FALSE)
+
+f1 = cmdscale(as.dist(1-fb_d), k=2, eig =TRUE)
+df_mds = data_frame(xx = -f1$points[,1],
+                    yy = f1$points[,2],
+                    fb = fb_names)
+
+library(ggplot2)
+
+ggplot(data = df_mds,
+       aes(x = xx,
+           y = yy,
+           label = fb)) +
+  geom_text(size = 3) +
+  theme_void()
+```
+
+Interpretacja takiego wykresu jest intuicyjna. Im bliżej siebie są dwa portale , tym bardziej są podobne - tzn. tym większa szansa na to, że użytkownik, który lajkował ostatnio posta na portalu A, lajkował także coś na portalu B. Na obrazku powyżej nietrudno zauważyć "grupy" portali:
+
+<ul>
+<li> Po prawej stronie: odosobniona grupa portali o prawicowych sympatiach (Do Rzeczy, wPolityce, Fronda, NiezależnaPL); </li>
+<li> nieco na lewo od nich - dwa portale nacechowane religijnie (RadioMaryja i Gość Niedzielny); </li>
+<li> po drugiej stronie obrazka widzimy wszystkie pozostałe portale, jednak i tutaj istnieją wyraźne kliki; </li>
+<li> na dole obrazka: grupa portali o dużym zasięgu, takich jak Onet czy TVN24; </li>
+<li> na środku dwie drobne kliki: Wprost z Interią oraz Newsweek z NaTemat; </li>
+<li> na górze mamy grupę portali o profilu ekonomicznym (Rzeczpospolita, Bankier, etc.), oraz - w pewnym oddaleniu - Politykę oraz lewicową Krytykę Polityczną. </li>
+</ul>
+
+Oba kierunki - zarówno lewo-prawo, jak i góra-dół - nie wydają się arbitralne. Wymiar horyzontalny tego obrazka zdaje się oddawać proweniencję polityczną portalu. Wertykalny wymiar z kolei, choć nieco mniej oczywisty, oddaje charakter portalu: strony na górze obrazka mają bardziej homogeniczną grupę odbiorców, podczas gdy portale w dolnej części starają się "obsłużyć wszystkich".
+
 <h3> Partie polityczne </h3>
 
 Pociągnijmy opowieść dalej. Możemy zastosować dokładnie tę samą metodologię mierząc podobieństwo między portalem informacyjnym a partią polityczną. I tak też zrobimy. 
 
-Ściągamy zatem 100 ostatnich postów z oficjalnych profilów następujących partii: PiS, Platforma Obywatelska, Kukiz'15, Nowoczesna oraz SLD.
+Ściągamy zatem 200 ostatnich postów z oficjalnych profilów następujących partii: PiS, Platforma Obywatelska, Kukiz'15, Nowoczesna, Razem oraz SLD.
 
 ```{r, warning=FALSE, message=FALSE, eval=FALSE}
 test_sites = c("pisorgpl", "Nowoczesna.oficjalnie", "PlatformaObywatelska",
@@ -149,3 +195,4 @@ dts = rbind(dts, df)
 dm = read.csv("dm.csv", header = TRUE, stringsAsFactors = FALSE)
 ```
 
+<h3> Kto nie lubi szczepionek, a kto zagląda na mirko? </h3>

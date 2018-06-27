@@ -33,7 +33,7 @@ return_likes = function(page_name, n_posts) {
 fb_names = c("Onet", "WirtualnaPolska", "wPolityce", "gazetapl", "dziennikrzeczpospolita", "interia",
              "TygodnikDoRzeczy", "KrytykaPolityczna", "PolskaAgencjaPrasowa", "nczas",
              "tvn24pl", "tvp.info", "radiozet", "rmf24", "natematpl", "TygodnikPolityka",
-             "NewsweekPolska", "tygodnikwprost", "gazetaprawnapl", "forsalpl", "Bankierpl",
+             "NewsweekPolska", "tygodnikwprost", "gazetaprawnapl", "Bankierpl",
              "goscniedzielny", "RadioMaryja", "frondaPL", "NiezaleznaPL")
 
 m_return_likes = memoise(return_likes)
@@ -56,6 +56,12 @@ group_by(df, fb) %>%
        x = "Portal") +
   theme_minimal()
 
+group_by(df, userid) %>%
+  summarise(nnn = n_distinct(fb)) %>%
+  group_by(nnn) %>%
+  summarise(users = n_distinct(userid)) %>%
+  mutate(pct = users / sum(users))
+
 #write.csv(df, "df.csv")
 
 
@@ -74,6 +80,7 @@ fb_compare = function(df, fb_1, fb_2) {
   return(N_both / N_users)
   
 }
+
 
 
 
@@ -97,9 +104,10 @@ row.names(fb_d) = fb_names
 colnames(fb_d) = fb_names
 fb_d
 
-
+write.csv(fb_d, "fb_d.csv", row.names = FALSE)
 
 #MDS
+#fb_d = read.csv("d:/kaggle/fejsik/fb_d.csv", header = TRUE, stringsAsFactors = FALSE)
 
 f1 = cmdscale(as.dist(1-fb_d), k=2, eig =TRUE)
 df_mds = data_frame(xx = f1$points[,1],
@@ -113,19 +121,21 @@ ggplot(data = df_mds,
            y = yy,
            label = fb)) +
   geom_text(size = 3) +
-  theme_bw()
+  theme_void()
 
 
 
 
 #profile vs inne strony
-
+partie = c("pisorgpl", "Nowoczesna.oficjalnie", "PlatformaObywatelska",
+           "sojusz", "KlubPoselskiKukiz15", "partiarazem")
 test_sites = c("pisorgpl", "Nowoczesna.oficjalnie", "PlatformaObywatelska",
-               "sojusz", "KlubPoselskiKukiz15")
+               "sojusz", "KlubPoselskiKukiz15", "partiarazem", "prawicarzeczypospolitej",
+               "wolnelewo", "libertarianin", "AteizmtoPrzyszlosc", "wykoppl")
 
 
 
-ts = map(test_sites, function(df) m_return_likes(df, 100))
+ts = map(test_sites, function(df) m_return_likes(df, 200))
 
 dts = do.call("rbind", ts)
 dts = filter(dts, !is.na(userid))
@@ -144,12 +154,35 @@ for(i in 1:length(fb_names)) {
 
 row.names(dm) = fb_names
 colnames(dm) = test_sites
-dm = as.data.frame(scale(dm))
+
+
+dm = as.data.frame(dm)
 dm$fb = row.names(dm)
 
+partie
+library(fmsb)
+?radarchart
+colnames(dm)
+radarchart(rbind(rep(0.05, 11),
+           rep(0, 11),
+           dm %>% 
+             filter(fb %in% c("gazetapl", "wPolityce")) %>% 
+             select(c("pisorgpl", "sojusz", "Nowoczesna.oficjalnie", "partiarazem",
+                      "KlubPoselskiKukiz15", "Nowoczesna.oficjalnie", "PlatformaObywatelska"))),
+           maxmin = TRUE)
+legend(x = -2.3, y = 1, legend=rownames(dm[1:10,]) )
+
+
+as.matrix(dm)*100
+ggradar(dm[1:10, c("group", partie)])
 
 write.csv(dm, "dm.csv")
-
+library(corrplot)
+corrplot(cor(dm[,1:10]),
+         method = "ellipse",
+         type = "upper",
+         order = "AOE")
+?corrplot
 ggplot(data = mutate(dm,
                      distm = PlatformaObywatelska - pisorgpl),
        aes(x = reorder(fb, distm),
